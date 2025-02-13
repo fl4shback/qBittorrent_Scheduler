@@ -1,0 +1,24 @@
+services:
+  qbittorrent_scheduler:
+    image: qbittorrent-scheduler:latest
+    build: .
+    container_name: qbittorrent_scheduler
+    restart: unless-stopped
+    environment:
+      - QBITTORRENT_URL=http://localhost:8080
+      - TZ=UTC
+      - WEEKDAY_START=18:00
+      - WEEKDAY_STOP=00:00
+      - WEEKEND_START=10:00
+      - WEEKEND_STOP=00:00
+      - USERNAME_FILE=/run/secrets/qb_username
+      - PASSWORD_FILE=/run/secrets/qb_password
+    secrets:
+      - qb_username
+      - qb_password
+
+secrets:
+  qb_username:
+    file: ./secrets/qb_username.txt
+  qb_password:
+    file: ./secrets/qb_password.txt
