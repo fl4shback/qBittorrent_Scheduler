@@ -1,8 +1,11 @@
+import datetime
+import logging
 import os
 import qbittorrentapi
 import schedule
 import time
 
+# Read docker secrets (failover to env if not present)
 def read_secret_or_env(env_var, file_var, default=None):
     secret_path = os.getenv(file_var)
     if secret_path:
@@ -17,53 +20,78 @@ def read_secret_or_env(env_var, file_var, default=None):
 QBITTORRENT_URL = os.getenv("QBITTORRENT_URL", "http://localhost:8080")
 USERNAME = read_secret_or_env("USERNAME", "USERNAME_FILE", "admin")
 PASSWORD = read_secret_or_env("PASSWORD", "PASSWORD_FILE", "adminadmin")
-TZ = os.getenv("TZ", "UTC")
+TZ = os.getenv("TZ", "Europe/Paris")
 WEEKDAY_START = os.getenv("WEEKDAY_START", "18:00")
-WEEKDAY_STOP = os.getenv("WEEKDAY_START", "00:00")
+WEEKDAY_STOP = os.getenv("WEEKDAY_STOP", "00:00")
 WEEKEND_START = os.getenv("WEEKEND_START", "10:00")
-WEEKEND_STOP = os.getenv("WEEKEND_START", "00:00")
+WEEKEND_STOP = os.getenv("WEEKEND_STOP", "00:00")
+LOG_LEVEL = os.getenv("LOG_LEVEL")
 
+# Init logger and setup log level
+log = logging.getLogger()
+if LOG_LEVEL == "DEBUG":
+    logging.basicConfig(level=logging.DEBUG)
+else:
+    logging.basicConfig(level=logging.INFO)
+
+# Connect to qBittorrent API
 def get_client():
     client = qbittorrentapi.Client(host=QBITTORRENT_URL, username=USERNAME, password=PASSWORD)
     try:
         client.auth_log_in()
-        print("Connected to qBittorrent API.")
+        log.debug("Connected to qBittorrent API.")
         return client
     except qbittorrentapi.LoginFailed as e:
-        print(f"Login failed: {e}")
+        log.info(f"Login failed: {e}")
         raise
 
 def enable_alt_speed():
     client = get_client()
     speed_mode = int(client.transfer.speed_limits_mode)
     if client and speed_mode == 0:
-        print("Enabling alternative speed limits.")
+        log.info("Enabling alternative speed limits.")
         client.transfer.set_speed_limits_mode(True) # 0/False = Global speed mode; 1/True = Alt Speed Mode
     elif client and speed_mode == 1:
-        print("Alt speed already toggled On")
+        log.debug("Alt speed already toggled On")
 
 def disable_alt_speed():
     client = get_client()
     speed_mode = int(client.transfer.speed_limits_mode)
     if client and speed_mode == 1:
-        print("Disabling alternative speed limits.")
+        log.info("Disabling alternative speed limits.")
         client.transfer.set_speed_limits_mode(False) # 0/False = Global speed mode; 1/True = Alt Speed Mode
     elif client and speed_mode == 0:
-        print("Alt speed already toggled Off")
+        log.debug("Alt speed already toggled Off")
 
-# Define schedule for weekdays (Monday to Friday)
-for day in [schedule.every().monday, schedule.every().tuesday, schedule.every().wednesday, schedule.every().thursday, schedule.every().friday]:
-    day.at(WEEKDAY_START, TZ).do(enable_alt_speed)
-    day.at(WEEKDAY_STOP, TZ).do(disable_alt_speed)
+# Schedule differently on weekdays and weekends
+def schedule_tasks():
+    current_day = datetime.datetime.now().weekday()
 
-# Define schedule for weekends (Saturday and Sunday)
-for day in [schedule.every().saturday, schedule.every().sunday]:
-    day.at(WEEKEND_START, TZ).do(enable_alt_speed)
-    day.at(WEEKEND_STOP, TZ).do(disable_alt_speed)
+    # Only update the schedule if the day has changed
+    if current_day != schedule_tasks.last_day:
+        schedule_tasks.last_day = current_day
+        log.info("Day changed, clearing schedule")
+        schedule.clear()
+
+        if current_day < 5:
+            # Weekdays: Monday (0) to Friday (4)
+            log.debug(f"Current day = {current_day}")
+            schedule.every().day.at(WEEKDAY_START, TZ).do(enable_alt_speed)
+            schedule.every().day.at(WEEKDAY_STOP, TZ).do(disable_alt_speed)
+            log.debug(schedule.get_jobs())
+        else:
+            # Weekends: Saturday (5) and Sunday (6)
+            log.debug(f"Current day = {current_day}")
+            schedule.every().day.at(WEEKEND_START, TZ).do(enable_alt_speed)
+            schedule.every().day.at(WEEKEND_STOP, TZ).do(disable_alt_speed)
+            log.debug(schedule.get_jobs())
 
 if __name__ == "__main__":
+    log.info("Schedule started")
+    schedule_tasks.last_day = None
     while True:
+        schedule_tasks()
         schedule.run_pending()
-        # disable_alt_speed()
-        # enable_alt_speed()
+        log.debug("Waiting 60 seconds before checking schedules again.")
         time.sleep(60)
+        log.debug("Checking schedules...")

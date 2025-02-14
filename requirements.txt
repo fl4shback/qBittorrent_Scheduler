@@ -1,3 +1,4 @@
 qbittorrent-api
 schedule
 pytz
+logging
