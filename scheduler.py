@@ -28,11 +28,13 @@ WEEKEND_STOP = os.getenv("WEEKEND_STOP", "00:00")
 LOG_LEVEL = os.getenv("LOG_LEVEL")
 
 # Init logger and setup log level
-log = logging.getLogger()
+log = logging.getLogger("qbt_scheduler")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 if LOG_LEVEL == "DEBUG":
-    logging.basicConfig(level=logging.DEBUG)
-else:
-    logging.basicConfig(level=logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG)
 
 # Connect to qBittorrent API
 def get_client():
@@ -52,7 +54,7 @@ def enable_alt_speed():
         log.info("Enabling alternative speed limits.")
         client.transfer.set_speed_limits_mode(True) # 0/False = Global speed mode; 1/True = Alt Speed Mode
     elif client and speed_mode == 1:
-        log.debug("Alt speed already toggled On")
+        log.debug("Alt speed already toggled ON.")
 
 def disable_alt_speed():
     client = get_client()
@@ -61,27 +63,30 @@ def disable_alt_speed():
         log.info("Disabling alternative speed limits.")
         client.transfer.set_speed_limits_mode(False) # 0/False = Global speed mode; 1/True = Alt Speed Mode
     elif client and speed_mode == 0:
-        log.debug("Alt speed already toggled Off")
+        log.debug("Alt speed already toggled OFF.")
 
 # Schedule differently on weekdays and weekends
 def schedule_tasks():
     current_day = datetime.datetime.now().weekday()
+    days = ["Monday", "Tuesday", "Wednesday", 
+        "Thursday", "Friday", "Saturday", "Sunday"]
 
     # Only update the schedule if the day has changed
     if current_day != schedule_tasks.last_day:
         schedule_tasks.last_day = current_day
-        log.info("Day changed, clearing schedule")
+
+        log.info(f"Setting schedule to {days[current_day]}.")
         schedule.clear()
 
         if current_day < 5:
             # Weekdays: Monday (0) to Friday (4)
-            log.debug(f"Current day = {current_day}")
+            log.debug(f"Current day = {days[current_day]}")
             schedule.every().day.at(WEEKDAY_START, TZ).do(enable_alt_speed)
             schedule.every().day.at(WEEKDAY_STOP, TZ).do(disable_alt_speed)
             log.debug(schedule.get_jobs())
         else:
             # Weekends: Saturday (5) and Sunday (6)
-            log.debug(f"Current day = {current_day}")
+            log.debug(f"Current day = {days[current_day]}")
             schedule.every().day.at(WEEKEND_START, TZ).do(enable_alt_speed)
             schedule.every().day.at(WEEKEND_STOP, TZ).do(disable_alt_speed)
             log.debug(schedule.get_jobs())
