@@ -97,6 +97,14 @@ if __name__ == "__main__":
     while True:
         schedule_tasks()
         schedule.run_pending()
-        log.debug("Waiting 60 seconds before checking schedules again.")
-        time.sleep(60)
-        log.debug("Checking schedules...")
+
+        # Determine the sleep duration dynamically
+        next_run = schedule.next_run()
+        if next_run:
+            sleep_time = (next_run - datetime.datetime.now()).total_seconds()
+            sleep_time = max(sleep_time, 1)  # Ensure we don't sleep for negative durations
+            log.debug(f"Sleeping for {sleep_time:.2f} seconds until next scheduled job.")
+            time.sleep(sleep_time)
+        else:
+            log.debug("No scheduled jobs. Sleeping for default 60 seconds.")
+            time.sleep(60)
